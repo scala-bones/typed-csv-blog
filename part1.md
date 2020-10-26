@@ -16,7 +16,7 @@ The concepts demonstrated in this post can be applied to all kinds of data-based
 JSON parsing, binary data format parsing and even database manipulation -- basically
 any time we want to change the data into different formats.
 I will also demonstrate
-Scala 3's new tuple syntax and who how it will aid is in keeping track of types.
+Scala 3's new tuple syntax and how it will aid is in keeping track of types.
 
 In this blog series, I intend to show how to add validation and conversion to the AST, 
 and how to extend an existing algebra.  In each post we will build on
