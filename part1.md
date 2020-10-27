@@ -14,11 +14,20 @@ each item in the Vector is a column within that row.
   
 The concepts demonstrated in this post can be applied to all kinds of data-based systems such as
 JSON parsing, binary data format parsing and even database manipulation -- basically
-any time we want to change the data into different formats.
-I will also demonstrate
+any time we want to change the data into different formats.  
+This pattern has shown up a few places, such as the 
+[Schema in Tapir](https://github.com/softwaremill/tapir/blob/master/core/src/main/scala/sttp/tapir/Schema.scala),
+the [ConfigDescriptor in Zio Config](https://github.com/zio/zio-config/blob/master/core/src/main/scala/zio/config/ConfigDescriptorModule.scala),
+as well as my own library [Bones](https://github.com/scala-bones/bones).
+Tapir uses a 3rd party library called [Magnolia](https://github.com/propensive/magnolia).  Zio Config uses 
+a [Boilerplate](https://github.com/zio/zio-config/blob/master/core/src/main/scala/zio/config/ProductBuilder.scala)
+approach, and Bones uses [Shapeless](https://github.com/milessabin/shapeless) to keep
+track of types.  Scala 3 contains new tuple syntax which should unify the approach each
+library is taking.   I will demonstrate
 Scala 3's new tuple syntax and how it aids in keeping track of types.
 
 In this blog series, I intend to show how to add validation and conversion to the AST, 
+how to add a DSL (Domain Specific Language) to simplify creating the AST, 
 and how to extend an existing algebra.  In each post we will build on
 what was presented in the previous post.  I believe the concepts
 presented here are intermediate level, but a knowledge of recursion 
@@ -106,11 +115,11 @@ The enum `DataDef[A]` is essentially the equivalent to a sealed trait in Scala 2
 represents a type, which is to be specified by each case of the enumeration.  
 
 The first two concrete types `StringDef` and `IntDef` take an index which
-represents which column of the CSV is being referenced.  Also, notice that they both 
+represents which column of the CSV is being referenced.  They both 
 extend DataDef with the type parameter `String` and `Int` respectively.  At this point
 we know that the `A` in `DataDef[A]` can be of type String or Int.
 
-The next type is `ListDef` which is a wrapper for the `DataList` enum, so let's
+The next type is `ListDef` which contains one property, the `DataList` enum, so let's
 look at `enum DataList[T<:Tuple]` first.  Note the type `T` is constrained to
 be a tuple.  There are two cases of the DataList enum.  The `EmptyList` represents
 an EmptyTuple and a Cons represents a "head" dataDef and a tail which itself is a DataList.
@@ -123,8 +132,8 @@ Empty tuple, resulting in a `DataList[String*:Int*:EmptyTuple]` (which we know i
 val strInt:  DataList[String*:Int*:EmptyTuple] = Cons[String,(Int)](StringDef(0), Cons[Int,EmptyTuple](IntDef(1), EmptyList))
 ```
 
-To bring this type back as a DataDef, we wrap it in a ListDef, so that the
-type parameter of the DataList is reflected as the type parameter in the DataDef.
+To bring this type back as a `DataDef`, we wrap it in a `ListDef`, so that the
+type parameter of the `DataList` is reflected as the type parameter in the `DataDef`.
 
 ```scala 3
 val strIntDef: DataDef[(String,Int)] = ListDef(strInt)
@@ -133,24 +142,27 @@ val strIntDef: DataDef[(String,Int)] = ListDef(strInt)
 Our fourth and final type we will define is our MapDef which takes
 two parameters, a function from `A => B` and a `DataDef[A]`.  MapDef
 extends `DataDef[B]`, meaning this type is describing a functional conversion from type A to type B.
-For example, using our `strIntDef` defined above:
+The conversion should not have any side effects or throw any Exceptions.  For example,
+converting a value of type `String` into a value of type `Long` could throw an exception for the value
+`fourty two`.  We will dive into conversions with errors in a later post.
+A good example, however, is to convert our Sting Int tuple into an instance of
+a case class:
 
 ```scala 3
 case class Person(name: String, age: Int)
-val personDef: DataDef[Person] = MapDef( (Person.apply _).tupled, strIntDef)
+val personF: (String,Int) => Person = (Person.apply _).tupled
+val personDef: DataDef[Person] = MapDef( personF, strIntDef)
 ```
 
 The last three examples build up a description of a CSV extraction where row 0 is a String,
 row 1 is an Int and then both are concatenated together and converted to a Person.  Scala 3's tuple
 syntax is really powerful here as it is allowing us to build up an AST while
-keeping track of the desired type.  Without Scala 3's new tuple syntax a 3rd party library such as 
-Shapeless, or a huge amount of boilerplate overhead would be needed to achieve the same
-functionality.
+keeping track of the final type.
 
 Note that the domain is being limited to String, Int, any combination of String and Int, 
 and any type which can be built
 from combinations of String and Int.  This is for demonstration purposes only so as to keep
-it simple.  Later, we will expand our domain to include any type. 
+it simple.  Later, we will expand our domain to include any type, including user defined types. 
 
 
 # Extraction Interpreter
@@ -158,8 +170,8 @@ it simple.  Later, we will expand our domain to include any type.
 In order for the AST data structure above to actually do anything, we need to create an
 interpreter for the DataDef.  We would like to transform the data structure into a function 
 which takes
-a Vector[String] and returns the type `A` in DataDef[A].  We don't want to a function
-just for `Person`, we want to be able to do this for all values of type `A`.  
+a Vector[String] and returns the type `A` in DataDef[A].  We don't want a function
+to work solely for `Person`, we want to the function to be polymorphic for any type `A`.  
 The function look like this:
  
 ```scala 3
@@ -247,10 +259,10 @@ def extractDefList[T<:Tuple](dataList: DataList[T]): Vector[String] => Either[Er
 }    
 ```
 
-The `extractList` function just delegates to the `extractDefList` which is a recursive 
+The `extractList` function delegates to the `extractDefList` which is a recursive 
 function.  The recursion stops when the `dataList` passed is of type `EmptyList` -- meaning we
 have reached then end of the DataDefs.  However, if the `dataList` passed is of type `Cons`,
-this means we have a head definition and a tail definition to deal with.  
+this means we have a head definition and a tail definition to deal with.
 Like we did in the `extractMap` function
 above, we will call `extract` to get a function from `Vector[String] => Either[Error,a]`
 where `a` is the type of the head.
@@ -262,10 +274,11 @@ As a reminder, here is the definition of cons:
 ```scala 3
   case Cons[H,T:<Tuple](dataDef: DataDef[H], tail: DataList[T]) extends DataList[H*:T]
 ```
-When we pattern match on `Cons[a,t]`, we do not actually know what the types `a` and `t` are.
-However, we do know that based on the Cons definition, that we can combine `a` and `t` 
-into type `A*:T`, which is the type `T` in the function `extractDefList[T<:Tuple]`
-and should be in the output to the function returned by `extractDefList`.
+When we pattern match on `Cons[h,t]`, we do not actually know what the types `h` and `t` are.
+However, we do know that based on the Cons extends `DataList[H*:T]`, so we know we 
+can combine `h` and `t` into type `H*:T`.  `H*:T` is the type `T` in the function 
+`extractDefList[T<:Tuple]` so it is the type in `DataDef[T]` pass to that function
+as well as in the function returned by `extractDefList`.
 We also have a function `extract[A](dataDef: DataDef[A])` which works for any type.
 So if we pass the `DataDef[a]` from our Cons enumeration, we are guaranteed to have
 a function of type `Vector[String] => Either[Errors,a]`.  Finally, we have our recursive
@@ -279,6 +292,7 @@ For example given we have some DataList whose type parameters are `String *: Int
 val dataList: DataList[String *: Int *: EmptyTuple] = ???
 val dataDefF: Vector[String] => Either[Errors, String *: Int *: EmptyTuple] = extractDefList(dataList)
 ```
+
 
 The first time `dataList` is matched on Cons in the `extractDefList` function, the head type with be 
 of type `String` and the tail will be of type `Int *: EmptyTuple`.  The value
