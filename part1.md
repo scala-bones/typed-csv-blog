@@ -16,7 +16,7 @@ The concepts demonstrated in this post can be applied to all kinds of data-based
 JSON parsing, binary data format parsing and even database manipulation -- basically
 any time we want to change the data into different formats.
 I will also demonstrate
-Scala 3's new tuple syntax and how it will aid is in keeping track of types.
+Scala 3's new tuple syntax and how it aids in keeping track of types.
 
 In this blog series, I intend to show how to add validation and conversion to the AST, 
 and how to extend an existing algebra.  In each post we will build on
@@ -27,37 +27,35 @@ and how to use type parameters is an important prerequisite.
 
 # Tuples
 Before we dive into the ASTs, it would be good to get a 
-quick overview of Scala 3's Tuple syntax.  Scala 2.x introduced the TupleN syntax (where 0 <= N <= 22) and
+quick overview of Scala 3's Tuple syntax.  Scala 2.x introduced the `TupleN` syntax (where 0 <= N <= 22) and
 some syntactic sugar so that when a tuple is defined using parentheses such as, 
 `val x = ("Bob", 7, true)`, the compiler converts this syntax into 
-and object `Tuple3("Bob",7,true)`.  Tuple3 is a simple case class defined as
+the instance `Tuple3("Bob",7,true)`.  Tuple3 is a simple case class defined as
 `Tuple3[+T1,+T2,+T3](_1: T1, _2: T2, _3: T3)`.
 Having this syntax allows us to use the convenient syntax of `x._1` to get the 
-first item from the tuple, `x._2` to get the second and `x._N` to get the
-Nth item from the tuple up to `_22`.
+first item from the tuple, `x._2` to get the second and so on.
 
 Scala 3 introduces a new Tuple trait and Tuple object which works with the TupleN syntax and
 adds many convenience functions.  Though there are many, I will only demonstrate those which 
 are applicable to this post.  
 
 There is a new singleton object called `EmptyTuple` which 
-extends Tuple.  
-There is also a method on the Tuple class  
+extends Tuple.  There is also a method on the Tuple class  
 called `*:` which allows us to [Cons](https://en.wikipedia.org/wiki/Cons) any value with 
 an existing tuple.  For example, the expression `1 *: EmptyTuple` adds the value 1 
 to an empty tuple creating a tuple of size 1.  When a
 method in Scala ends with colon `:`, a method on the right operand is executed 
 using the left operand as the argument.  So in this case 
 `*:` is being called on `EmptyTuple` with the argument `1`.  We can build up a tuple
-using `*:` by chaining this syntax like so `"Bob" *: 7 *: true *: EmptyTuple`.  In this example,
+using the `*:` method by chaining this syntax like so: `"Bob" *: 7 *: true *: EmptyTuple`.  In this example,
 the value `true` is prefixed to EmptyTuple, `7` is then prefixed to `true *: EmptyTuple` and finally,
 `"Bob"` is prefixed to `7 *: true *: EmptyTuple`.  
 
 Scala 3 tuple syntax also introduces a type
 called `*:`.  Note that the type `*:` and the method `*:` are the same symbol.
 This may sound a bit confusing at first, however the type is only used with other
-types, whereas the method is only used with tuple values. In this example, the left 
-side of the equals sign is using the type `*:` and the right side is using the method `*:`.
+types, whereas the method is only used with tuple values. In the example below, the left 
+side of the equals sign is using the __type__ `*:` and the right side is using the __method__ `*:`.
 
 ```scala 3
 val a: String *: Int *: Boolean *: EmptyTuple = "Bob" *: 7 *: true *: EmptyTuple 
@@ -104,18 +102,16 @@ enum DataList[T<:Tuple] {
 }
 ```
 
-The enum `DataDef[A]` is essentially our base sealed trait.  The `[A]`
-represents a type, which at this point we don't know what it is.  What we
-are saying is that there is a Data Definition for some type A.  That type `[A]` 
-is constrained by the enumerations.
+The enum `DataDef[A]` is essentially the equivalent to a sealed trait in Scala 2.x.  The `[A]`
+represents a type, which is to be specified by each case of the enumeration.  
 
 The first two concrete types `StringDef` and `IntDef` take an index which
 represents which column of the CSV is being referenced.  Also, notice that they both 
 extend DataDef with the type parameter `String` and `Int` respectively.  At this point
-we know that the `A` in `DataDef[A]` can only be of type String or Int.
+we know that the `A` in `DataDef[A]` can be of type String or Int.
 
 The next type is `ListDef` which is a wrapper for the `DataList` enum, so let's
-look at `enum DataList[T<:Tuple]` first.  Note the type `T` is constrained so that it has to
+look at `enum DataList[T<:Tuple]` first.  Note the type `T` is constrained to
 be a tuple.  There are two cases of the DataList enum.  The `EmptyList` represents
 an EmptyTuple and a Cons represents a "head" dataDef and a tail which itself is a DataList.
 The intent here to be able to concatenate many `DataDef` instances while keeping track
